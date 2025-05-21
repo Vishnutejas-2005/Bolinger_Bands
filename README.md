@@ -1,1 +1,1 @@
-# Bolinger_Bands
+# Bolinger 
