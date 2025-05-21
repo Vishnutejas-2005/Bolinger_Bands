@@ -90,7 +90,7 @@ def construct_upper_lower_bands(prices:np.ndarray, moving_avg:np.ndarray, moving
         lower_band[i-1] = moving_avg[i-1] - 2*moving_std[i-1]
     return upper_band, lower_band
     
-def buy_and_sell_profits_basic(closing_prices:np.ndarray, upper_band:np.ndarray, lower_band:np.ndarray, mid_band:np.ndarray):
+def buy_and_sell_profits_basic(closing_prices:np.ndarray, upper_band:np.ndarray, lower_band:np.ndarray, mid_band:np.ndarray, stoploss:int = -1 ):
     '''
         Takes a numpy array of closing prices and gives the profits made by buying and selling \\
             **********
@@ -99,6 +99,7 @@ def buy_and_sell_profits_basic(closing_prices:np.ndarray, upper_band:np.ndarray,
             # upper_band - a numpy array of upper bands \\
             # lower_band - a numpy array of lower bands \\
             # mid_band - a numpy array of mid bands \\
+            # stoploss - a int that sets the stoploss in % (if -ve then no stoploss)
             # **********
             # #### OUTPUT
             # tuple - a tuple of the profits made by buying and selling
@@ -113,26 +114,45 @@ def buy_and_sell_profits_basic(closing_prices:np.ndarray, upper_band:np.ndarray,
     profit = 0
 
     for i in range(len(closing_prices)):
-        if flag == 0:
+        if flag == 0: # No Position
             if closing_prices[i] > upper_band[i]:
-                flag = -1
+                flag = -1 # Shorting
                 current_price = closing_prices[i]
             elif closing_prices[i] < lower_band[i]:
-                flag = 1
+                flag = 1 # Longing
                 current_price = closing_prices[i]
-        elif flag == -1:
-            if closing_prices[i] < mid_band[i]:
-                flag = 0
-                profit += current_price - closing_prices[i]
-        elif flag == 1:
-            if closing_prices[i] > mid_band[i]:
-                flag = 0
-                profit += closing_prices[i] - current_price
+
+        elif flag == -1: # Closing for a Shorted Position
+            Current_Profit = current_price - closing_prices[i]
+            if stoploss > 0 :
+                if closing_prices[i] < mid_band[i] or ((Current_Profit/closing_prices[i] * 100) < -1 * stoploss) :
+                    flag = 0
+                    profit += Current_Profit
+            else :
+                if closing_prices[i] < mid_band[i]:
+                    flag = 0
+                    profit += Current_Profit
+        
+        elif flag == 1: # Closing for a Longed Position
+            Current_Profit = closing_prices[i] - current_price
+            if stoploss > 0 :
+                if closing_prices[i] > mid_band[i] or ((Current_Profit/closing_prices[i] * 100) < -1 * stoploss) :
+                    flag = 0
+                    profit += Current_Profit
+            else :
+                if closing_prices[i] > mid_band[i]:
+                    flag = 0
+                    profit += Current_Profit
+
+
         list_of_profit.append(profit)
+
+    # Closing the trade at the end of data
     if flag == -1:
         profit += current_price - closing_prices[-1]
     elif flag == 1:
         profit += closing_prices[-1] - current_price
+    
     list_of_profit.append(profit)
     return list_of_profit
 
@@ -282,7 +302,4 @@ def plot_acf_pacf(data:pd.Series, lags:int = 10, change_the_scale:bool = False):
     plt.title('PACF Plot')
     plt.show()
     return None
-
-
-
 
