@@ -156,6 +156,183 @@ def buy_and_sell_profits_basic(closing_prices:np.ndarray, upper_band:np.ndarray,
     list_of_profit.append(profit)
     return list_of_profit
 
+##==============================================================================##
+
+def Bollinger_Open_strat3 (mean:int, prev_mean:int, BB_up:int, BB_low:int, Hit:int = 0) -> int :
+    '''
+        Takes mean price of the stock at a particular minute and says if the stock has crossed the BB Bands or not \\
+        If it has, it tells us if we should short, long or hold the stock 
+        
+        ---
+        #### INPUT
+        mean - mean/current value of the stock we want to trade \\
+        prev_mean - mean of the stock in the previous minute \\
+        BB_up - Upper Bollinger Band \\
+        BB_low - Lower Bollinger Band \\
+        Hit - 0 => Has not crossed the Bands, -1 => Crossed Upper Band before, 1 => Crossed lower band before
+        ---
+        #### OUTPUT
+        If Hit = 0 \\
+            Integer Value: 1 => crossed lower band; 0 => not crossed; -1 => crossed upper band \\
+        If Hit = -1 or 1 \\
+            Integer Value: 1 => Long; -1 => short; 0 => Do nothing
+    '''       
+    if Hit == 0:
+        if mean < BB_low:
+            signal = 1  # Hit Lower BB
+        elif mean > BB_up:
+            signal = -1  # Hit Upper BB
+        else:
+            signal = 0  # Did not Hit
+    elif Hit == 1:
+        if prev_mean < mean:
+            signal = 1
+        else: 
+            signal = 0
+    else:
+        if prev_mean > mean:
+            signal = -1
+        else:
+            signal = 0    
+    
+    return signal
+
+
+def BollingerBaseline_Close (mean:int, open_price:int, BB_mid:int, Mode:str, stoploss:int = 100) -> list[int] :
+    '''
+        Takes current mean price and trade opening price and tells us if we should close the trade or not at the current stock price
+
+        ---
+        #### INPUT
+        mean - mean/current value of the stock we want to trade \\
+        open_price - the price at which we opened the trade \\
+        BB_mid - Middle Bollinger Band (moving average) \\
+        Mode - 'long' => we bought the stock before; 'short' => we sold the stock before \\
+        lev - leverage \\
+        stoploss - in percentage 
+
+        ---
+        #### OUTPUT
+        List of 2 Integers: 
+            List[0]: 1 => close/complete the trade; 0 => hold/do nothing
+            List[1]: Net profit % 
+    '''
+ 
+    if Mode == 'long': # we bought stocks
+        profit_per = (mean - open_price)/open_price * 100 # calculating PnL
+        profit = (mean - open_price)
+        if mean >= BB_mid: # closing when current value goes above middle band
+            signal = 1 # signaling to close
+            return_list = [signal, profit]
+            return return_list
+        else:
+            if profit_per <= -stoploss : # closing at stoploss if stock falls too much
+                signal = 1 # signaling to close
+                return_list = [signal, profit]
+                return return_list
+            else:
+                return [0, 0] # do nothing
+            
+    
+    elif Mode == 'short': # we sold stocks
+        profit_per = (open_price - mean)/open_price * 100 # calculating PnL
+        profit = (mean - open_price)
+        if mean <= BB_mid: # closing when current value goes below middle band
+            signal = 1 # signaling to close
+            return_list = [signal, profit]
+            return return_list
+        else:
+            if profit_per <= -stoploss : # closing at stoploss if stock increases too much
+                signal = 1 # signaling to close
+                return_list = [signal, profit]
+                return return_list
+            else:
+                return [0, 0] # do nothing
+            
+    else:
+        print("Mode should have inputs as 'short' or 'long'; but someother input was given")
+        return [0, 0]
+
+
+def Bollinger_Running_strat3(closing_prices:np.ndarray, upper_band:np.ndarray, lower_band:np.ndarray, mid_band:np.ndarray, stoploss:int = -1,  output:bool = 'True') -> list[float]:
+    '''
+        Takes a string containing the path to a csv file that contains the data in minute-by-minute order. \\
+        The data in the csv file should contain "open, high, low, close, Mean" in the respective order. \\
+        It runs the BollingerBaseline algorithm on this data and returns the PnL. \\
+        Assumptions - we can have only one entry before we close. And only one active position at a time. 
+        
+        ---
+        #### INPUT
+        path - a string containing the path to the csv file of stock data \\
+        period - moving average for "period" minutes \\
+        k - SD Multiplier (Bandwidth/2 or the distance between upper/lower band and middle band) \\
+        lev - leverage \\
+        stoploss - in percentage \\
+        Entry_size - percentage of portfolio traded each time \\
+
+        ---
+        #### OUTPUT
+        List - Per minute PnL
+    '''
+
+    # Initialize variables
+    position = None  # 'long' or 'short'
+    Hit = 0
+    open_price = 0
+    total_profit = 0
+    Per_min_returns = []
+    signal = 0
+
+    # Iterate through the data
+    for i in range(1, len(closing_prices)):
+        Current_CP = closing_prices[i]
+        Prev_CP = closing_prices[i-1]
+        BB_up = upper_band[i]
+        BB_low = lower_band[i]
+        BB_mid = mid_band[i]
+
+        if position is None:  # No active position
+            if Hit == 0:
+                Hit = Bollinger_Open_strat3(Current_CP, Prev_CP, BB_up, BB_low, Hit=0)  
+            if Hit == 1:
+                signal = Bollinger_Open_strat3(Current_CP, Prev_CP, BB_up, BB_low, Hit=1)
+            elif Hit == -1:
+                signal = Bollinger_Open_strat3(Current_CP, Prev_CP, BB_up, BB_low, Hit=-1)
+
+            if signal == 1:  # Long entry
+                if not output: print(f"Open Signal: {signal}")  # Debugging: Print entry signal
+                position = 'long'
+                open_price = Current_CP
+            elif signal == -1:  # Short entry
+                if not output:print(f"Open Signal: {signal}")  # Debugging: Print entry signal
+                position = 'short'
+                open_price = Current_CP
+
+        elif position == 'long':  # Active long position
+            close_signal, profit = BollingerBaseline_Close(Current_CP, open_price, BB_mid, 'long')                
+            if close_signal == 1:  # Close position
+                if not output: print(f"Close Signal: {close_signal}, Profit: {profit}")  # Debugging: Print close signal and profit
+                total_profit += profit
+                # Per_min_returns.append(profit) # appending per minute returns (in percentage)
+                position = None  # Reset position
+                signal = 0 # Reset signal
+
+        elif position == 'short':  # Active short position
+            close_signal, profit = BollingerBaseline_Close(Current_CP, open_price, BB_mid, 'short')            
+            if close_signal == 1:  # Close position
+                if not output: print(f"Close Signal: {close_signal}, Profit: {profit}")  # Debugging: Print close signal and profit
+                total_profit += profit
+                # Per_min_returns.append(profit) # appending per minute returns (in percentage)
+                position = None  # Reset position
+                signal = 0 # Reset signal
+        
+        Per_min_returns.append(total_profit)     
+    
+    return Per_min_returns  # Return net profit as a percentage of the initial portfolio and per minute returns
+
+
+##==============================================================================##
+
 def plot_profit(list_of_profit:np.ndarray, type_of_data:str = "timeseries", period:int = 20, k:int = 2):
     '''
         Takes a numpy array of profits and plots the profits \\
