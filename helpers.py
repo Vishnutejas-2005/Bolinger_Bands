@@ -9,6 +9,10 @@ import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning
 from statsmodels.tsa.arima.model import ARIMA
 from statsmodels.stats.diagnostic import acorr_ljungbox
+from statsmodels.stats.diagnostic import het_arch
+from arch import arch_model
+
+
 
 
 
@@ -350,7 +354,7 @@ def plot_profit(list_of_profit:np.ndarray, type_of_data:str = "timeseries", peri
     if type_of_data == "timeseries":
         plt.figure(figsize=(10, 5))
         plt.plot(list_of_profit)
-        plt.title(f"Profits made by buying and selling with period {period} and k {k}")
+        plt.title(f"timeseries")
         plt.xlabel("Time")
         plt.ylabel("Profit")
         plt.show()
@@ -479,4 +483,91 @@ def plot_acf_pacf(data:pd.Series, lags:int = 10, change_the_scale:bool = False):
     plt.title('PACF Plot')
     plt.show()
     return None
+
+def fit_arima_model(data:np.ndarray, order:tuple = (1, 0, 1)):
+    '''
+        Takes a numpy array of data and fits an ARIMA model \\
+            **********
+            #### INPUT
+            # data - a numpy array of data
+            # order - a tuple of the order of the ARIMA model
+            **********
+            # #### OUTPUT
+            # model - the fitted ARIMA model
+    '''
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=ConvergenceWarning)
+        model = ARIMA(data, order=order)
+        model_fit = model.fit()
+    return model_fit
+
+def get_residuals_from_arima_model(model_fit):
+    '''
+        Takes a fitted ARIMA model and gives the residuals \\
+            **********
+            #### INPUT
+            # model_fit - the fitted ARIMA model
+            **********
+            # #### OUTPUT
+            # residuals - the residuals of the ARIMA model
+    '''
+    residuals = model_fit.resid
+    return residuals
+
+def arch_test(residuals:np.ndarray, lags:int = 10):
+    '''
+        Takes a numpy array of residuals and gives the ARCH test results \\
+            **********
+            #### INPUT
+            # residuals - a numpy array of residuals
+            # lags - a int, the number of lags to be used
+            **********
+            # #### OUTPUT
+            # tuple - a tuple of the ARCH test results
+    '''
+    result = het_arch(residuals, lags=lags)
+    return result
+
+def fit_garch_model_to_residuals(residuals:np.ndarray, p:int = 1, q:int = 1):
+    '''
+        Takes a numpy array of residuals and fits a GARCH model \\
+            **********
+            #### INPUT
+            # residuals - a numpy array of residuals
+            # p - a int, the order of the GARCH model
+            # q - a int, the order of the GARCH model
+            **********
+            # #### OUTPUT
+            # model - the fitted GARCH model
+    '''
+    model = arch_model(residuals, vol='Garch', p=p, q=q)
+    model_fit = model.fit(disp="off")
+    return model_fit
+
+def forecast_from_arima_garch_model(model_arima_fit, model_garch_fit, k:int = 2, steps:int = 1, scale: int = 1):
+    '''
+        Takes a fitted ARIMA model and a fitted GARCH model and gives the bolinger bands \\
+            **********
+            #### INPUT
+            # model_arima_fit - the fitted ARIMA model
+            # model_garch_fit - the fitted GARCH model
+            # k - a int, the number of standard deviations to be used
+            # steps - no of predictions to be made
+            # scale - a int, the scale of the GARCH model
+            **********
+            # #### OUTPUT
+            # tuple - a tuple of the bolinger bands
+    '''
+    arima_forecast = model_arima_fit.forecast(steps=steps)
+    garch_forecast = model_garch_fit.forecast(horizon=steps)
+
+    volatility = np.sqrt(garch_forecast.variance.values[-1, :])
+
+    middle_band = arima_forecast
+    upper_band = arima_forecast + (k * volatility/scale)
+    lower_band = arima_forecast - (k * volatility/scale)
+    return middle_band, upper_band, lower_band
+    
+def train_and_predict_bolinger_bands():
+    pass
 
